@@ -28,6 +28,10 @@ register uint32_t T0 asm(AREG1);
 #include "cpu.h"
 #include "exec-all.h"
 
+extern const uint8_t rox8_table[64];
+extern const uint8_t rox16_table[64];
+extern const uint8_t rox32_table[64];
+
 static inline void env_to_regs(void)
 {
 }
