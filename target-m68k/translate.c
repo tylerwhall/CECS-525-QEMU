@@ -568,8 +568,7 @@ static TCGv gen_lea(DisasContext *s, uint16_t insn, int opsize)
     case 5: /* Indirect displacement.  */
         reg = AREG(insn, 0);
         tmp = tcg_temp_new();
-        ext = lduw_code(s->pc);
-        s->pc += 2;
+        ext = read_im16(s);
         tcg_gen_addi_i32(tmp, reg, (int16_t)ext);
         return tmp;
     case 6: /* Indirect index + displacement.  */
@@ -1278,8 +1277,7 @@ DISAS_INSN(movem)
     int opsize;
     int32_t incr;
 
-    mask = lduw_code(s->pc);
-    s->pc += 2;
+    mask = read_im16(s);
     tmp = gen_lea(s, insn, OS_LONG);
     if (IS_NULL_QREG(tmp)) {
         gen_addr_fault(s);
@@ -1341,8 +1339,7 @@ DISAS_INSN(bitop_im)
         opsize = OS_LONG;
     op = (insn >> 6) & 3;
 
-    bitnum = lduw_code(s->pc);
-    s->pc += 2;
+    bitnum = read_im16(s);
     if (bitnum & 0xff00) {
         disas_undef(s, insn);
         return;
@@ -1486,8 +1483,7 @@ DISAS_INSN(cas)
         abort();
     }
 
-    ext = lduw_code(s->pc);
-    s->pc += 2;
+    ext = read_im16(s);
     taddr = gen_lea(s, insn, opsize);
     if (IS_NULL_QREG(taddr)) {
         gen_addr_fault(s);
@@ -1679,8 +1675,7 @@ static void gen_set_sr(DisasContext *s, uint16_t insn, int ccr_only)
     else if ((insn & 0x3f) == 0x3c)
       {
         uint16_t val;
-        val = lduw_code(s->pc);
-        s->pc += 2;
+        val = read_im16(s);
         gen_set_sr_im(s, val, ccr_only);
       }
     else
@@ -1798,8 +1793,7 @@ DISAS_INSN(mull)
 
     /* The upper 32 bits of the product are discarded, so
        muls.l and mulu.l are functionally equivalent.  */
-    ext = lduw_code(s->pc);
-    s->pc += 2;
+    ext = read_im16(s);
     if (ext & 0x400) {
        if (!m68k_feature(s->env, M68K_FEATURE_QUAD_MULDIV)) {
            gen_exception(s, s->pc - 4, EXCP_UNSUPPORTED);
@@ -2733,8 +2727,7 @@ DISAS_INSN(bitfield_reg)
 
     reg = DREG(insn, 0);
     op = (insn >> 8) & 7;
-    ext = lduw_code(s->pc);
-    s->pc += 2;
+    ext = read_im16(s);
 
     bitfield_param(ext, &offset, &width, &mask);
 
@@ -2907,8 +2900,7 @@ DISAS_INSN(bitfield_mem)
     TCGv tmp;
 
     op = (insn >> 8) & 7;
-    ext = lduw_code(s->pc);
-    s->pc += 2;
+    ext = read_im16(s);
     src = gen_lea(s, insn, OS_LONG);
     if (IS_NULL_QREG(src)) {
        gen_addr_fault(s);
@@ -3012,14 +3004,12 @@ DISAS_INSN(strldsr)
     uint32_t addr;
 
     addr = s->pc - 2;
-    ext = lduw_code(s->pc);
-    s->pc += 2;
+    ext = read_im16(s);
     if (ext != 0x46FC) {
         gen_exception(s, addr, EXCP_UNSUPPORTED);
         return;
     }
-    ext = lduw_code(s->pc);
-    s->pc += 2;
+    ext = read_im16(s);
     if (IS_USER(s) || (ext & SR_S) == 0) {
         gen_exception(s, addr, EXCP_PRIVILEGE);
         return;
@@ -3086,8 +3076,7 @@ DISAS_INSN(stop)
         return;
     }
 
-    ext = lduw_code(s->pc);
-    s->pc += 2;
+    ext = read_im16(s);
 
     gen_set_sr_im(s, ext, 0);
     tcg_gen_movi_i32(QREG_HALTED, 1);
@@ -3113,8 +3102,7 @@ DISAS_INSN(movec)
         return;
     }
 
-    ext = lduw_code(s->pc);
-    s->pc += 2;
+    ext = read_im16(s);
 
     if (ext & 0x8000) {
         reg = AREG(ext, 12);
@@ -3547,8 +3535,7 @@ DISAS_INSN(fscc_mem)
     TCGv addr;
     uint16_t ext;
 
-    ext = lduw_code(s->pc);
-    s->pc += 2;
+    ext = read_im16(s);
 
     taddr = gen_lea(s, insn, OS_BYTE);
     if (IS_NULL_QREG(taddr)) {
@@ -3574,8 +3561,7 @@ DISAS_INSN(fscc_reg)
     TCGv reg;
     uint16_t ext;
 
-    ext = lduw_code(s->pc);
-    s->pc += 2;
+    ext = read_im16(s);
     
     reg = DREG(insn, 0);
 
@@ -3643,8 +3629,7 @@ DISAS_INSN(mac)
         s->done_mac = 1;
     }
 
-    ext = lduw_code(s->pc);
-    s->pc += 2;
+    ext = read_im16(s);
 
     acc = ((insn >> 7) & 1) | ((ext >> 3) & 2);
     dual = ((insn & 0x30) != 0 && (ext & 3) != 0);
@@ -4192,8 +4177,7 @@ static void disas_m68k_insn(CPUState * env, DisasContext *s)
     if (unlikely(qemu_loglevel_mask(CPU_LOG_TB_OP)))
         tcg_gen_debug_insn_start(s->pc);
 
-    insn = lduw_code(s->pc);
-    s->pc += 2;
+    insn = read_im16(s);
 
     opcode_table[insn](s, insn);
 }
