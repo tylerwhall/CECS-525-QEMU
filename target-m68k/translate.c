@@ -2192,6 +2192,35 @@ DISAS_INSN(eor)
     DEST_EA(insn, opsize, dest, &addr);
 }
 
+DISAS_INSN(exg)
+{
+    TCGv src;
+    TCGv dest;
+    TCGv tmp;
+
+    tmp = tcg_temp_new();
+    switch ((insn >> 3) & 0x1f) {
+        case 0x08:
+            src = DREG(insn, 9);
+            dest = DREG(insn, 0);
+            break;
+        case 0x09:
+            src = AREG(insn, 9);
+            dest = AREG(insn, 0);
+            break;
+        case 0x11:
+            src = DREG(insn, 9);
+            dest = AREG(insn, 0);
+            break;
+        default:
+            fprintf(stderr, "Invalid exg operands");
+            abort();
+    }
+    tcg_gen_mov_i32(tmp, src);
+    tcg_gen_mov_i32(src, dest);
+    tcg_gen_mov_i32(dest, tmp);
+}
+
 DISAS_INSN(and)
 {
     TCGv src;
@@ -4130,6 +4159,7 @@ void register_m68k_insns (CPUM68KState *env)
     INSN(and,       c000, f000, M68000);
     INSN(mulw,      c0c0, f0c0, CF_ISA_A);
     INSN(mulw,      c0c0, f0c0, M68000);
+    INSN(exg,       c100, f130, M68000);
     INSN(abcd_reg,  c100, f1f8, M68000);
     INSN(abcd_mem,  c108, f1f8, M68000);
     INSN(addsub,    d000, f000, CF_ISA_A);
