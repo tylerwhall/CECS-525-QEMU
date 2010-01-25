@@ -1459,6 +1459,72 @@ DISAS_INSN(arith_im)
     }
 }
 
+static TCGv gen_get_ccr(DisasContext *s)
+{
+    TCGv dest;
+
+    gen_flush_flags(s);
+    dest = tcg_temp_new();
+    tcg_gen_shli_i32(dest, QREG_CC_X, 4);
+    tcg_gen_or_i32(dest, dest, QREG_CC_DEST);
+    return dest;
+}
+
+static TCGv gen_get_sr(DisasContext *s)
+{
+    TCGv ccr;
+    TCGv sr;
+
+    ccr = gen_get_ccr(s);
+    sr = tcg_temp_new();
+    tcg_gen_andi_i32(sr, QREG_SR, 0xffe0);
+    tcg_gen_or_i32(sr, sr, ccr);
+    return sr;
+}
+
+DISAS_INSN(arith_im_sr)
+{
+    int op;
+    uint32_t im;
+    TCGv src;
+    TCGv dest;
+    int opsize;
+
+    op = (insn >> 9) & 7;
+    opsize = insn_opsize(insn, 6);
+    switch (opsize) {
+    case OS_BYTE:
+        im = read_im8(s);
+        break;
+    case OS_WORD:
+        im = read_im16(s);
+        break;
+    default:
+       abort();
+    }
+    src = gen_get_sr(s);
+    dest = tcg_temp_new();
+    switch (op) {
+    case 0: /* ori */
+        tcg_gen_ori_i32(dest, src, im);
+        break;
+    case 1: /* andi */
+        tcg_gen_andi_i32(dest, src, im);
+        break;
+    case 5: /* eori */
+        tcg_gen_xori_i32(dest, src, im);
+        break;
+    default:
+        abort();
+    }
+    if (opsize) {
+        gen_helper_set_sr(cpu_env, dest);
+    }
+    tcg_gen_andi_i32(QREG_CC_DEST, dest, 0xf);
+    tcg_gen_shri_i32(dest, dest, 4);
+    tcg_gen_andi_i32(QREG_CC_X, dest, 1);
+}
+
 DISAS_INSN(cas)
 {
     int opsize;
@@ -1614,17 +1680,6 @@ DISAS_INSN(clr)
     opsize = insn_opsize(insn, 6);
     DEST_EA(insn, opsize, tcg_const_i32(0), NULL);
     gen_logic_cc(s, tcg_const_i32(0), opsize);
-}
-
-static TCGv gen_get_ccr(DisasContext *s)
-{
-    TCGv dest;
-
-    gen_flush_flags(s);
-    dest = tcg_temp_new();
-    tcg_gen_shli_i32(dest, QREG_CC_X, 4);
-    tcg_gen_or_i32(dest, dest, QREG_CC_DEST);
-    return dest;
 }
 
 DISAS_INSN(move_from_ccr)
@@ -3024,18 +3079,6 @@ DISAS_INSN(ff1)
     gen_helper_ff1(reg, reg);
 }
 
-static TCGv gen_get_sr(DisasContext *s)
-{
-    TCGv ccr;
-    TCGv sr;
-
-    ccr = gen_get_ccr(s);
-    sr = tcg_temp_new();
-    tcg_gen_andi_i32(sr, QREG_SR, 0xffe0);
-    tcg_gen_or_i32(sr, sr, ccr);
-    return sr;
-}
-
 DISAS_INSN(strldsr)
 {
     uint16_t ext;
@@ -3981,6 +4024,7 @@ void register_m68k_insns (CPUM68KState *env)
     INSN(undef,     0000, 0000, M68000);
     INSN(arith_im,  0080, fff8, CF_ISA_A);
     INSN(arith_im,  0000, ff00, M68000);
+    INSN(arith_im_sr,  003c, ffbf, M68000);
     INSN(undef,     00c0, ffc0, M68000);
     INSN(bitrev,    00c0, fff8, CF_ISA_APLUSC);
     INSN(bitop_reg, 0100, f1c0, CF_ISA_A);
@@ -3993,12 +4037,14 @@ void register_m68k_insns (CPUM68KState *env)
     INSN(bitop_reg, 01c0, f1c0, M68000);
     INSN(arith_im,  0280, fff8, CF_ISA_A);
     INSN(arith_im,  0200, ff00, M68000);
+    INSN(arith_im_sr,  023c, ffbf, M68000);
     INSN(undef,     02c0, ffc0, M68000);
     INSN(byterev,   02c0, fff8, CF_ISA_APLUSC);
     INSN(arith_im,  0480, fff8, CF_ISA_A);
     INSN(arith_im,  0400, ff00, M68000);
     INSN(undef,     04c0, ffc0, M68000);
     INSN(arith_im,  0600, ff00, M68000);
+    INSN(arith_im_sr,  063c, ffbf, M68000);
     INSN(undef,     06c0, ffc0, M68000);
     INSN(ff1,       04c0, fff8, CF_ISA_APLUSC);
     INSN(arith_im,  0680, fff8, CF_ISA_A);
