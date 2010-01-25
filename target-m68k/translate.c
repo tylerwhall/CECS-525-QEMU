@@ -1497,6 +1497,10 @@ DISAS_INSN(arith_im_sr)
         im = read_im8(s);
         break;
     case OS_WORD:
+        if (IS_USER(s)) {
+            gen_exception(s, s->pc - 2, EXCP_PRIVILEGE);
+            return;
+        }
         im = read_im16(s);
         break;
     default:
