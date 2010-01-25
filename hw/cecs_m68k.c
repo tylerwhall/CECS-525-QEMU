@@ -153,7 +153,6 @@ static void cecs_m68k_init(ram_addr_t ram_size,
                      const char *initrd_filename, const char *cpu_model)
 {
     CPUState *env;
-    target_phys_addr_t entry;
 
     if (!cpu_model)
         cpu_model = "m68000";
@@ -184,11 +183,7 @@ static void cecs_m68k_init(ram_addr_t ram_size,
 
     sysbus_create_simple("acia-6850", 0x8000, NULL);
 
-    /* Read reset vector */
-    cpu_physical_memory_read(0x4, (uint8_t *)&entry, sizeof(entry));
-    entry = tswap32(entry);
-    printf("Reset vector = 0x%"PRIx32"\n", (uint32_t) entry);
-    env->pc = entry;
+    cpu_reset(env); //Sets SSP and PC
 }
 
 static QEMUMachine cecs_m68k_machine = {
