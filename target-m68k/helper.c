@@ -162,6 +162,7 @@ static int cpu_m68k_set_model(CPUM68KState *env, const char *name)
         m68k_set_feature(env, M68K_FEATURE_LONG_MULDIV);
         m68k_set_feature(env, M68K_FEATURE_FPU);
         m68k_set_feature(env, M68K_FEATURE_CAS);
+        m68k_set_feature(env, M68K_FEATURE_CACHE);
     case M68K_CPUID_M68000:
         m68k_set_feature(env, M68K_FEATURE_M68000);
         m68k_set_feature(env, M68K_FEATURE_USP);
@@ -170,6 +171,7 @@ static int cpu_m68k_set_model(CPUM68KState *env, const char *name)
     case M68K_CPUID_M5206:
         m68k_set_feature(env, M68K_FEATURE_CF_ISA_A);
         m68k_set_feature(env, M68K_FEATURE_SCALED_INDEX);
+        m68k_set_feature(env, M68K_FEATURE_CACHE);
         break;
     case M68K_CPUID_M5208:
         m68k_set_feature(env, M68K_FEATURE_CF_ISA_A);
@@ -178,6 +180,7 @@ static int cpu_m68k_set_model(CPUM68KState *env, const char *name)
         m68k_set_feature(env, M68K_FEATURE_BRAL);
         m68k_set_feature(env, M68K_FEATURE_CF_EMAC);
         m68k_set_feature(env, M68K_FEATURE_USP);
+        m68k_set_feature(env, M68K_FEATURE_CACHE);
         break;
     case M68K_CPUID_CFV4E:
         m68k_set_feature(env, M68K_FEATURE_CF_ISA_A);
@@ -187,6 +190,7 @@ static int cpu_m68k_set_model(CPUM68KState *env, const char *name)
         m68k_set_feature(env, M68K_FEATURE_CF_FPU);
         m68k_set_feature(env, M68K_FEATURE_CF_EMAC);
         m68k_set_feature(env, M68K_FEATURE_USP);
+        m68k_set_feature(env, M68K_FEATURE_CACHE);
         break;
     case M68K_CPUID_ANY:
         m68k_set_feature(env, M68K_FEATURE_M68000);
@@ -208,6 +212,7 @@ static int cpu_m68k_set_model(CPUM68KState *env, const char *name)
         m68k_set_feature(env, M68K_FEATURE_LONG_MULDIV);
         m68k_set_feature(env, M68K_FEATURE_QUAD_MULDIV);
         m68k_set_feature(env, M68K_FEATURE_CAS);
+        m68k_set_feature(env, M68K_FEATURE_CACHE);
         break;
     }
 
@@ -231,12 +236,17 @@ void cpu_reset(CPUM68KState *env)
     memset(env, 0, offsetof(CPUM68KState, breakpoints));
 #if !defined (CONFIG_USER_ONLY)
     env->sr = 0x2700;
-#endif
+    /* Set SSR */
+    cpu_physical_memory_read(0x0, (uint8_t *)&env->aregs[7],
+                             sizeof(env->aregs[7]));
+    env->aregs[7] = tswap32(env->aregs[7]);
     m68k_switch_sp(env);
+    /* Set PC from the interrupt vector.  */
+    cpu_physical_memory_read(0x4, (uint8_t *)&env->pc, sizeof(env->pc));
+    env->pc = tswap32(env->pc);
+#endif
     /* ??? FP regs should be initialized to NaN.  */
     env->cc_op = CC_OP_FLAGS;
-    /* TODO: We should set PC from the interrupt vector.  */
-    env->pc = 0;
     tlb_flush(env, 1);
 }
 
@@ -460,7 +470,8 @@ void m68k_switch_sp(CPUM68KState *env)
     int new_sp;
 
     env->sp[env->current_sp] = env->aregs[7];
-    new_sp = (env->sr & SR_S && env->cacr & M68K_CACR_EUSP)
+    new_sp = (env->sr & SR_S && ((env->cacr & M68K_CACR_EUSP) ||
+                                 !m68k_feature(env, M68K_FEATURE_CACHE)))
              ? M68K_SSP : M68K_USP;
     env->aregs[7] = env->sp[new_sp];
     env->current_sp = new_sp;
