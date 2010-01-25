@@ -80,14 +80,22 @@ static void do_rte(void)
 {
     uint32_t sp;
     uint32_t fmt;
+    int sr_size;
 
     sp = env->aregs[7];
-    fmt = ldl_kernel(sp);
-    env->pc = ldl_kernel(sp + 4);
+    /* XXX Not valid for 68010+ */
+    if (m68k_feature(env, M68K_FEATURE_M68000)) {
+        sr_size = 2;
+        fmt = lduw_kernel(sp);
+    } else {
+        sr_size = 4;
+        fmt = ldl_kernel(sp);
+    }
+    env->pc = ldl_kernel(sp + sr_size);
     sp |= (fmt >> 28) & 3;
     env->sr = fmt & 0xffff;
     m68k_switch_sp(env);
-    env->aregs[7] = sp + 8;
+    env->aregs[7] = sp + sr_size + 4;
 }
 
 void do_interrupt(int is_hw)
@@ -144,12 +152,23 @@ void do_interrupt(int is_hw)
     }
     m68k_switch_sp(env);
 
+    if (m68k_feature(env, M68K_FEATURE_M68000))
+        sp = env->aregs[7]; //Put frame on supervisor stack
+    else
+        sp &= ~3;
     /* ??? This could cause MMU faults.  */
-    sp &= ~3;
-    sp -= 4;
-    stl_kernel(sp, retaddr);
-    sp -= 4;
-    stl_kernel(sp, fmt);
+    /* XXX Not valid for 68010+ */
+    if (m68k_feature(env, M68K_FEATURE_M68000)) {
+        sp -= 4;
+        stl_kernel(sp, retaddr);
+        sp -= 2;
+        stw_kernel(sp, env->sr);
+    } else {
+        sp -= 4;
+        stl_kernel(sp, retaddr);
+        sp -= 4;
+        stl_kernel(sp, fmt);
+    }
     env->aregs[7] = sp;
     /* Jump to vector.  */
     env->pc = ldl_kernel(env->vbr + vector);
