@@ -147,6 +147,13 @@ static int copy_rom(const char *filename)
     return 0;
 }
 
+static void cecs_m68k_reset(void *opaque)
+{
+    CPUState *env = (CPUState *)opaque;
+
+    cpu_reset(env);
+}
+
 static void cecs_m68k_init(ram_addr_t ram_size,
                      const char *boot_device,
                      const char *kernel_filename, const char *kernel_cmdline,
@@ -183,7 +190,8 @@ static void cecs_m68k_init(ram_addr_t ram_size,
 
     sysbus_create_simple("acia-6850", 0x8000, NULL);
 
-    cpu_reset(env); //Sets SSP and PC
+    qemu_register_reset(cecs_m68k_reset, env);
+    cecs_m68k_reset(env); //Sets SSP and PC
 }
 
 static QEMUMachine cecs_m68k_machine = {
