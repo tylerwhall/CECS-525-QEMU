@@ -232,6 +232,14 @@ static void cecs_m68k_init(ram_addr_t ram_size,
         exit(1);
     }
 
+    if (initrd_filename) {
+        if(copy_rom(initrd_filename)) {
+            printf("Failed to load initrd\n");
+        } else {
+            printf("Loaded initrd\n");
+        }
+    }
+
     sysbus_create_simple("acia-6850", 0x8000, NULL);
 
     qemu_register_reset(cecs_m68k_reset, env);
