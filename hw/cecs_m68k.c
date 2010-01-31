@@ -8,10 +8,6 @@
  */
 
 #include <stdio.h>
-#include <sys/types.h>
-#include <sys/stat.h>
-#include <fcntl.h>
-#include <errno.h>
 #include <inttypes.h>
 
 #include "hw.h"
@@ -171,15 +167,15 @@ static void srec_input(uint8_t *buf, int size)
 
 static int copy_rom(const char *filename)
 {
-    int fd;
+    FILE *fd;
     uint8_t buf[256];
     int count;
 
-    fd = open(filename, O_RDONLY);
-    if (fd < 0)
+    fd = fopen(filename, "rb");
+    if (!fd)
         return -1;
     do {
-        count = read(fd, buf, sizeof(buf));
+        count = fread(buf, 1, sizeof(buf), fd);
         srec_input(buf, count);
     } while (count);
 
