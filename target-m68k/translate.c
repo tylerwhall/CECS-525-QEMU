@@ -2199,6 +2199,31 @@ DISAS_INSN(mov3q)
     DEST_EA(insn, OS_LONG, src, NULL);
 }
 
+DISAS_INSN(cmpm)
+{
+    TCGv src;
+    TCGv dest;
+    TCGv result;
+    int opsize;
+    uint16_t insn2;
+
+    insn2 = insn;
+    opsize = insn_opsize(insn, 6);
+
+    insn = (insn >> 9) & 7;
+    insn |= 0x3 << 3; //AR with post increment
+    SRC_EA(src, opsize, -1, NULL);
+
+    insn = insn2;
+    insn |= 0x3 << 3; //AR with post increment
+    SRC_EA(dest, opsize, -1, NULL);
+
+    result = tcg_temp_new();
+    tcg_gen_sub_i32(result, dest, src);
+    gen_update_cc_add(result, src);
+    SET_CC_OP(opsize, SUB);
+}
+
 DISAS_INSN(cmp)
 {
     TCGv src;
@@ -4204,6 +4229,7 @@ void register_m68k_insns (CPUM68KState *env)
     INSN(cmpa,      b1c0, f1c0, CF_ISA_A);
     INSN(cmp,       b000, f100, M68000);
     INSN(eor,       b100, f100, M68000);
+    INSN(cmpm,      b108, f138, M68000);
     INSN(cmpa,      b0c0, f0c0, M68000);
     INSN(eor,       b180, f1c0, CF_ISA_A);
     INSN(and,       c000, f000, CF_ISA_A);
