@@ -28,41 +28,6 @@ typedef struct {
     target_phys_addr_t vectors[256];
 } vector_state;
 
-static uint32_t cecs_m68k_vect_readf(void *opaque, target_phys_addr_t addr)
-{
-    printf("Tried to read from ROMD as I/O??\n");
-    return 0;
-}
-
-static void cecs_m68k_vect_write(void *opaque, target_phys_addr_t addr, uint32_t val)
-{
-    uint32_t buf;
-
-    if (addr >= 0x8 && addr < 0x400) {
-        buf = tswap32(val);
-        cpu_physical_memory_write_rom(addr, (uint8_t *)&buf, sizeof(buf));
-    } else {
-        printf("Rom write blocked: 0x%"PRIx32" 0x%"PRIx32"\n", (uint32_t) addr, (uint32_t) val);
-    }
-}
-
-static void cecs_m68k_vect_writef(void *opaque, target_phys_addr_t addr, uint32_t val)
-{
-    printf("Rom write not 32 bits??\n");
-}
-
-static CPUReadMemoryFunc * const cecs_m68k_vect_readfn[] = {
-    cecs_m68k_vect_readf,
-    cecs_m68k_vect_readf,
-    cecs_m68k_vect_readf,
-};
-
-static CPUWriteMemoryFunc * const cecs_m68k_vect_writefn[] = {
-    cecs_m68k_vect_writef,
-    cecs_m68k_vect_writef,
-    cecs_m68k_vect_write,
-};
-
 typedef enum {
     SREC_IDLE,
     SREC_TYPE,
@@ -195,7 +160,6 @@ static void cecs_m68k_init(ram_addr_t ram_size,
                      const char *initrd_filename, const char *cpu_model)
 {
     CPUState *env;
-    int regs;
 
     if (!cpu_model)
         cpu_model = "m68000";
@@ -209,11 +173,8 @@ static void cecs_m68k_init(ram_addr_t ram_size,
 
     /* Use ROMD instead of ROM so it can still be executable, but
      * partially writable. */
-    regs = cpu_register_io_memory(cecs_m68k_vect_readfn,
-                                  cecs_m68k_vect_writefn, NULL);
-
     cpu_register_physical_memory(ROM_ADDR, ROM_SIZE,
-        regs | qemu_ram_alloc(ROM_SIZE) | IO_MEM_ROMD);
+        qemu_ram_alloc(ROM_SIZE) | IO_MEM_ROM);
 
     cpu_register_physical_memory(RAM_ADDR, RAM_SIZE,
         qemu_ram_alloc(RAM_SIZE) | IO_MEM_RAM);
