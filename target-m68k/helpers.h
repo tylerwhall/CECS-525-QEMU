@@ -48,6 +48,8 @@ DEF_HELPER_2(xflag_lt_i8, i32, i32, i32)
 DEF_HELPER_2(xflag_lt_i16, i32, i32, i32)
 DEF_HELPER_2(xflag_lt_i32, i32, i32, i32)
 DEF_HELPER_2(set_sr, void, env, i32)
+DEF_HELPER_2(set_usp, void, env, i32)
+DEF_HELPER_1(get_usp, i32, env)
 DEF_HELPER_3(movec, void, env, i32, i32)
 
 DEF_HELPER_2(const_f64, f64, env, i32);

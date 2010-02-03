@@ -737,6 +737,22 @@ void HELPER(set_sr)(CPUState *env, uint32_t val)
     m68k_switch_sp(env);
 }
 
+uint32_t HELPER(get_usp)(CPUState *env)
+{
+    if (env->sr & SR_S)
+        return env->sp[M68K_USP];
+    else
+        return env->aregs[7]; //Current SP is USP
+}
+
+void HELPER(set_usp)(CPUState *env, uint32_t val)
+{
+    if (env->sr & SR_S)
+        env->sp[M68K_USP] = val;
+    else
+        env->aregs[7] = val; //Current SP is USP
+}
+
 #define HELPER_SHL(type, bits) \
 uint32_t HELPER(glue(glue(shl, bits),_cc))(CPUState *env, uint32_t val, uint32_t shift) \
 { \

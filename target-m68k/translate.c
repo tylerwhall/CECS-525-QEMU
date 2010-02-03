@@ -3155,22 +3155,26 @@ DISAS_INSN(move_to_sr)
 
 DISAS_INSN(move_from_usp)
 {
+    TCGv reg;
+
     if (IS_USER(s)) {
         gen_exception(s, s->pc - 2, EXCP_PRIVILEGE);
         return;
     }
-    /* TODO: Implement USP.  */
-    gen_exception(s, s->pc - 2, EXCP_ILLEGAL);
+    reg = AREG(insn, 0);
+    gen_helper_get_usp(reg, cpu_env);
 }
 
 DISAS_INSN(move_to_usp)
 {
+    TCGv reg;
+
     if (IS_USER(s)) {
         gen_exception(s, s->pc - 2, EXCP_PRIVILEGE);
         return;
     }
-    /* TODO: Implement USP.  */
-    gen_exception(s, s->pc - 2, EXCP_ILLEGAL);
+    reg = AREG(insn, 0);
+    gen_helper_set_usp(cpu_env, reg);
 }
 
 DISAS_INSN(halt)
