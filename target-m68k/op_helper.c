@@ -101,6 +101,7 @@ static void do_rte(void)
 void do_interrupt(int is_hw)
 {
     uint32_t sp;
+    uint32_t sr;
     uint32_t fmt;
     uint32_t retaddr;
     uint32_t vector;
@@ -145,6 +146,7 @@ void do_interrupt(int is_hw)
     fmt |= vector << 16;
     fmt |= env->sr;
 
+    sr = env->sr;
     env->sr |= SR_S;
     if (is_hw) {
         env->sr = (env->sr & ~SR_I) | (env->pending_level << SR_I_SHIFT);
@@ -162,7 +164,7 @@ void do_interrupt(int is_hw)
         sp -= 4;
         stl_kernel(sp, retaddr);
         sp -= 2;
-        stw_kernel(sp, env->sr);
+        stw_kernel(sp, sr);
     } else {
         sp -= 4;
         stl_kernel(sp, retaddr);
