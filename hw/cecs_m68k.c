@@ -147,6 +147,19 @@ static int copy_rom(const char *filename)
     return 0;
 }
 
+static void cecs_set_irq(void *opaque, int irq, int level)
+{
+    CPUState *env = (CPUState *)opaque;
+
+    irq += 1; //Get priority level
+
+    if (level) {
+        if (env->pending_level < irq) {
+            m68k_set_irq_level(env, 1, 24 + irq);
+        }
+    }
+}
+
 static void cecs_m68k_reset(void *opaque)
 {
     CPUState *env = (CPUState *)opaque;
@@ -160,6 +173,7 @@ static void cecs_m68k_init(ram_addr_t ram_size,
                      const char *initrd_filename, const char *cpu_model)
 {
     CPUState *env;
+    qemu_irq *irqs;
 
     if (!cpu_model)
         cpu_model = "m68000";
@@ -197,7 +211,10 @@ static void cecs_m68k_init(ram_addr_t ram_size,
         }
     }
 
+    /* Allocate 7 irqs */
+    irqs = qemu_allocate_irqs(cecs_set_irq, env, 7);
     sysbus_create_simple("acia-6850", 0x8000, NULL);
+    sysbus_create_simple("acia-6850", 0x80000, irqs[4]); //Level 5
 
     qemu_register_reset(cecs_m68k_reset, env);
     cecs_m68k_reset(env); //Sets SSP and PC
