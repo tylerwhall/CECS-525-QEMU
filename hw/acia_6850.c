@@ -25,6 +25,9 @@
 
 #define CONTROL_RXIRQ   (1 << 7)
 
+#define CTRL_TXIRQ      0x20
+#define CTRL_TXIRQMSK   0x60
+
 struct acia_6850 {
     SysBusDevice busdev;
     CharDriverState *chr;
@@ -37,6 +40,7 @@ struct acia_6850 {
 static void acia_update_irq(struct acia_6850 *s)
 {
     int rx_irq = s->status & STATUS_RDRF && s->control & CONTROL_RXIRQ;
+    rx_irq |= ((s->control & CTRL_TXIRQMSK) == CTRL_TXIRQ) && s->status & STATUS_TDRE;
 
     if (rx_irq) {
         s->status |= STATUS_IRQ;
@@ -83,7 +87,6 @@ static uint32_t acia_6850_mem_readb(void *opaque, target_phys_addr_t addr)
     switch (addr) {
         case ACIA_CONTROL:
             value = s->status;
-            value |= STATUS_TDRE;
             break;
         case ACIA_DATA:
             value = s->buf;
@@ -145,6 +148,7 @@ static int acia_6850_init(SysBusDevice *dev)
 
     /* Initialize */
     s->status = s->control = s->buf = 0;
+    s->status |= STATUS_TDRE;
     s->irq = NULL;
 
     /* Set up memory-mapped io */
