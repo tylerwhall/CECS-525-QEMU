@@ -25,8 +25,9 @@
 #define RAM_SIZE (0x1000) //4k - 1k
 
 typedef struct {
-    target_phys_addr_t vectors[256];
-} vector_state;
+    CPUState *env;
+    uint8_t active_irqs;
+} irq_state;
 
 typedef enum {
     SREC_IDLE,
@@ -149,15 +150,22 @@ static int copy_rom(const char *filename)
 
 static void cecs_set_irq(void *opaque, int irq, int level)
 {
-    CPUState *env = (CPUState *)opaque;
+    irq_state *s = (irq_state *)opaque;
+    int i;
 
-    irq += 1; //Get priority level
-
+    irq += 1;
     if (level) {
-        if (env->pending_level < irq) {
-            m68k_set_irq_level(env, 1, 24 + irq);
+        s->active_irqs |= (1 << irq);
+    } else {
+        s->active_irqs &= ~(1 << irq);
+    }
+    for (i = 7; i > 0; i--) {
+        if (s->active_irqs & (1 << i)) {
+            m68k_set_irq_level(s->env, 1, 24 + i);
+            return;
         }
     }
+    m68k_set_irq_level(s->env, 0, 0);
 }
 
 static void cecs_m68k_reset(void *opaque)
@@ -174,6 +182,7 @@ static void cecs_m68k_init(ram_addr_t ram_size,
 {
     CPUState *env;
     qemu_irq *irqs;
+    irq_state *irq_dev;
 
     if (!cpu_model)
         cpu_model = "m68000";
@@ -212,7 +221,9 @@ static void cecs_m68k_init(ram_addr_t ram_size,
     }
 
     /* Allocate 7 irqs */
-    irqs = qemu_allocate_irqs(cecs_set_irq, env, 7);
+    irq_dev = qemu_mallocz(sizeof(irq_state));
+    irq_dev->env = env;
+    irqs = qemu_allocate_irqs(cecs_set_irq, irq_dev, 7);
     sysbus_create_simple("acia-6850", 0x8000, NULL);
     sysbus_create_simple("acia-6850", 0x80000, irqs[4]); //Level 5
 
