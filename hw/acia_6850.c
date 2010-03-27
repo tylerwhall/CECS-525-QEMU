@@ -39,11 +39,11 @@ static void acia_update_irq(struct acia_6850 *s)
     int rx_irq = s->status & STATUS_RDRF && s->control & CONTROL_RXIRQ;
 
     if (rx_irq) {
-        s->status &= ~STATUS_IRQ;
-        qemu_irq_lower(s->irq);
-    } else {
         s->status |= STATUS_IRQ;
         qemu_irq_raise(s->irq);
+    } else {
+        s->status &= ~STATUS_IRQ;
+        qemu_irq_lower(s->irq);
     }
 }
 
@@ -159,6 +159,8 @@ static int acia_6850_init(SysBusDevice *dev)
     s->chr = qdev_init_chardev(&dev->qdev);
     if (s->chr)
         qemu_chr_add_handlers(s->chr, acia_can_rx, acia_rx, acia_event, s);
+    else
+        printf("ACIA 6850 could not allocate chardev\n");
 
     return 0;
 }
