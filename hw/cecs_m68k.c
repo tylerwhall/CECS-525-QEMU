@@ -224,8 +224,10 @@ static void cecs_m68k_init(ram_addr_t ram_size,
     irq_dev = qemu_mallocz(sizeof(irq_state));
     irq_dev->env = env;
     irqs = qemu_allocate_irqs(cecs_set_irq, irq_dev, 7);
+
     sysbus_create_simple("acia-6850", 0x8000, NULL);
     sysbus_create_simple("acia-6850", 0x80000, irqs[4]); //Level 5
+    sysbus_create_simple("dumb-timer", 0x8020, irqs[5]); //Level 6
 
     qemu_register_reset(cecs_m68k_reset, env);
     cecs_m68k_reset(env); //Sets SSP and PC
