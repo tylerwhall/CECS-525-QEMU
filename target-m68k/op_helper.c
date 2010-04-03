@@ -94,8 +94,8 @@ static void do_rte(void)
     env->pc = ldl_kernel(sp + sr_size);
     sp |= (fmt >> 28) & 3;
     env->sr = fmt & 0xffff;
-    m68k_switch_sp(env);
     env->aregs[7] = sp + sr_size + 4;
+    m68k_switch_sp(env);
 }
 
 void do_interrupt(int is_hw)
