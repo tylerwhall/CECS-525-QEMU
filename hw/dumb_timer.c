@@ -23,7 +23,7 @@ static void dumb_timer_tick(void *opaque)
     struct dumb_timer *s = opaque;
 
     qemu_irq_raise(s->irq);
-    qemu_mod_timer(s->timer, qemu_get_clock(vm_clock) + get_ticks_per_sec() / 10);
+    qemu_mod_timer(s->timer, qemu_get_clock(vm_clock) + get_ticks_per_sec() / 1200);
 }
 
 static uint32_t dumb_timer_mem_readf(void *opaque, target_phys_addr_t addr)
