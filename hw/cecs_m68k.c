@@ -197,10 +197,10 @@ static void cecs_m68k_init(ram_addr_t ram_size,
     /* Use ROMD instead of ROM so it can still be executable, but
      * partially writable. */
     cpu_register_physical_memory(ROM_ADDR, ROM_SIZE,
-        qemu_ram_alloc(ROM_SIZE) | IO_MEM_ROM);
+        qemu_ram_alloc(NULL, "cecs.rom", ROM_SIZE) | IO_MEM_ROM);
 
     cpu_register_physical_memory(RAM_ADDR, RAM_SIZE,
-        qemu_ram_alloc(RAM_SIZE) | IO_MEM_RAM);
+        qemu_ram_alloc(NULL, "cecs.ram", RAM_SIZE) | IO_MEM_RAM);
 
     if (!kernel_filename) {
         printf("Must specify rom as kernel\n");

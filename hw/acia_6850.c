@@ -153,7 +153,7 @@ static int acia_6850_init(SysBusDevice *dev)
 
     /* Set up memory-mapped io */
     regs = cpu_register_io_memory(acia_6850_mem_read,
-                                  acia_6850_mem_write, s);
+                                  acia_6850_mem_write, s, DEVICE_NATIVE_ENDIAN);
     sysbus_init_mmio(dev, 4, regs);
 
     /* Request an irq line */

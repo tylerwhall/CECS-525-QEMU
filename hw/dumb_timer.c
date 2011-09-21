@@ -10,7 +10,10 @@
 #include <inttypes.h>
 
 #include "hw.h"
+#include "qemu-timer.h"
 #include "sysbus.h"
+
+#define TICK_NS (1000*1000*1000 / 1200)
 
 struct dumb_timer {
     SysBusDevice busdev;
@@ -23,7 +26,7 @@ static void dumb_timer_tick(void *opaque)
     struct dumb_timer *s = opaque;
 
     qemu_irq_raise(s->irq);
-    qemu_mod_timer(s->timer, qemu_get_clock(vm_clock) + get_ticks_per_sec() / 1200);
+    qemu_mod_timer(s->timer, qemu_get_clock_ns(vm_clock) + TICK_NS);
 }
 
 static uint32_t dumb_timer_mem_readf(void *opaque, target_phys_addr_t addr)
@@ -64,14 +67,14 @@ static int dumb_timer_init(SysBusDevice *dev)
 
     /* Set up memory-mapped io */
     regs = cpu_register_io_memory(dumb_timer_mem_read,
-                                  dumb_timer_mem_write, s);
+                                  dumb_timer_mem_write, s, DEVICE_NATIVE_ENDIAN);
     sysbus_init_mmio(dev, 4, regs);
 
     /* Request an irq line */
     sysbus_init_irq(dev, &s->irq);
 
     /* Setup timer */
-    s->timer = qemu_new_timer(vm_clock, dumb_timer_tick, s);
+    s->timer = qemu_new_timer_ns(vm_clock, dumb_timer_tick, s);
     dumb_timer_tick(s);
 
     return 0;
