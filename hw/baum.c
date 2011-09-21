@@ -335,7 +335,7 @@ static int baum_eat_packet(BaumDriverState *baum, const uint8_t *buf, int len)
         int i;
 
         /* Allow 100ms to complete the DisplayData packet */
-        qemu_mod_timer(baum->cellCount_timer, qemu_get_clock(vm_clock) +
+        qemu_mod_timer(baum->cellCount_timer, qemu_get_clock_ns(vm_clock) +
                        get_ticks_per_sec() / 10);
         for (i = 0; i < baum->x * baum->y ; i++) {
             EAT(c);
@@ -564,7 +564,19 @@ static void baum_chr_read(void *opaque)
     }
 }
 
-CharDriverState *chr_baum_init(QemuOpts *opts)
+static void baum_close(struct CharDriverState *chr)
+{
+    BaumDriverState *baum = chr->opaque;
+
+    qemu_free_timer(baum->cellCount_timer);
+    if (baum->brlapi) {
+        brlapi__closeConnection(baum->brlapi);
+        qemu_free(baum->brlapi);
+    }
+    qemu_free(baum);
+}
+
+int chr_baum_init(QemuOpts *opts, CharDriverState **_chr)
 {
     BaumDriverState *baum;
     CharDriverState *chr;
@@ -581,6 +593,7 @@ CharDriverState *chr_baum_init(QemuOpts *opts)
     chr->chr_write = baum_write;
     chr->chr_send_event = baum_send_event;
     chr->chr_accept_input = baum_accept_input;
+    chr->chr_close = baum_close;
 
     handle = qemu_mallocz(brlapi_getHandleSize());
     baum->brlapi = handle;
@@ -591,7 +604,7 @@ CharDriverState *chr_baum_init(QemuOpts *opts)
         goto fail_handle;
     }
 
-    baum->cellCount_timer = qemu_new_timer(vm_clock, baum_cellCount_timer_cb, baum);
+    baum->cellCount_timer = qemu_new_timer_ns(vm_clock, baum_cellCount_timer_cb, baum);
 
     if (brlapi__getDisplaySize(handle, &baum->x, &baum->y) == -1) {
         brlapi_perror("baum_init: brlapi_getDisplaySize");
@@ -616,7 +629,8 @@ CharDriverState *chr_baum_init(QemuOpts *opts)
 
     qemu_chr_generic_open(chr);
 
-    return chr;
+    *_chr = chr;
+    return 0;
 
 fail:
     qemu_free_timer(baum->cellCount_timer);
@@ -625,5 +639,5 @@ fail_handle:
     qemu_free(handle);
     qemu_free(chr);
     qemu_free(baum);
-    return NULL;
+    return -EIO;
 }

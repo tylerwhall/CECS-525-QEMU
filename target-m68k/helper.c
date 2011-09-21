@@ -23,7 +23,6 @@
 
 #include "config.h"
 #include "cpu.h"
-#include "exec-all.h"
 #include "qemu-common.h"
 #include "gdbstub.h"
 
@@ -97,7 +96,7 @@ const uint8_t rox8_table[64] = {
     2, 3, 4, 5, 6, 7, 8, 0,
 };
 
-void m68k_cpu_list(FILE *f, int (*cpu_fprintf)(FILE *f, const char *fmt, ...))
+void m68k_cpu_list(FILE *f, fprintf_function cpu_fprintf)
 {
     unsigned int i;
 
@@ -477,14 +476,6 @@ void m68k_switch_sp(CPUM68KState *env)
     env->current_sp = new_sp;
 }
 
-/* MMU */
-
-/* TODO: This will need fixing once the MMU is implemented.  */
-target_phys_addr_t cpu_get_phys_page_debug(CPUState *env, target_ulong addr)
-{
-    return addr;
-}
-
 #if defined(CONFIG_USER_ONLY)
 
 int cpu_m68k_handle_mmu_fault (CPUState *env, target_ulong address, int rw,
@@ -497,14 +488,23 @@ int cpu_m68k_handle_mmu_fault (CPUState *env, target_ulong address, int rw,
 
 #else
 
+/* MMU */
+
+/* TODO: This will need fixing once the MMU is implemented.  */
+target_phys_addr_t cpu_get_phys_page_debug(CPUState *env, target_ulong addr)
+{
+    return addr;
+}
+
 int cpu_m68k_handle_mmu_fault (CPUState *env, target_ulong address, int rw,
                                int mmu_idx, int is_softmmu)
 {
     int prot;
 
     address &= TARGET_PAGE_MASK;
-    prot = PAGE_READ | PAGE_WRITE;
-    return tlb_set_page(env, address, address, prot, mmu_idx, is_softmmu);
+    prot = PAGE_READ | PAGE_WRITE | PAGE_EXEC;
+    tlb_set_page(env, address, address, prot, mmu_idx, TARGET_PAGE_SIZE);
+    return 0;
 }
 
 /* Notify CPU of a pending interrupt.  Prioritization and vectoring should
@@ -1101,10 +1101,10 @@ float64 HELPER(sub_cmp_f64)(CPUState *env, float64 a, float64 b)
     /* ??? Should flush denormals to zero.  */
     float64 res;
     res = float64_sub(a, b, &env->fp_status);
-    if (float64_is_nan(res)) {
+    if (float64_is_quiet_nan(res)) {
         /* +/-inf compares equal against itself, but sub returns nan.  */
-        if (!float64_is_nan(a)
-            && !float64_is_nan(b)) {
+        if (!float64_is_quiet_nan(a)
+            && !float64_is_quiet_nan(b)) {
             res = float64_zero;
             if (float64_lt_quiet(a, res, &env->fp_status))
                 res = float64_chs(res);
@@ -1201,7 +1201,7 @@ void HELPER(macsats)(CPUState *env, uint32_t acc)
     if (env->macsr & MACSR_V) {
         env->macsr |= MACSR_PAV0 << acc;
         if (env->macsr & MACSR_OMC) {
-            /* The result is saturated to 32 bits, despite overflow occuring
+            /* The result is saturated to 32 bits, despite overflow occurring
                at 48 bits.  Seems weird, but that's what the hardware docs
                say.  */
             result = (result >> 63) ^ 0x7fffffff;
@@ -1255,10 +1255,11 @@ void HELPER(mac_set_flags)(CPUState *env, uint32_t acc)
 {
     uint64_t val;
     val = env->macc[acc];
-    if (val == 0)
+    if (val == 0) {
         env->macsr |= MACSR_Z;
-    else if (val & (1ull << 47));
+    } else if (val & (1ull << 47)) {
         env->macsr |= MACSR_N;
+    }
     if (env->macsr & (MACSR_PAV0 << acc)) {
         env->macsr |= MACSR_V;
     }

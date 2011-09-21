@@ -25,9 +25,11 @@
 
 #include "config-host.h"
 
+#ifndef _WIN32
+#include <sys/wait.h>
+#endif
 #include "net.h"
 #include "monitor.h"
-#include "sysemu.h"
 #include "qemu_socket.h"
 #include "slirp/libslirp.h"
 
@@ -126,7 +128,7 @@ static void net_slirp_cleanup(VLANClientState *nc)
 }
 
 static NetClientInfo net_slirp_info = {
-    .type = NET_CLIENT_TYPE_SLIRP,
+    .type = NET_CLIENT_TYPE_USER,
     .size = sizeof(SlirpState),
     .receive = net_slirp_receive,
     .cleanup = net_slirp_cleanup,
@@ -238,7 +240,8 @@ static int net_slirp_init(VLANState *vlan, const char *model,
     nc = qemu_new_net_client(&net_slirp_info, vlan, NULL, model, name);
 
     snprintf(nc->info_str, sizeof(nc->info_str),
-             "net=%s, restricted=%c", inet_ntoa(net), restricted ? 'y' : 'n');
+             "net=%s,restrict=%s", inet_ntoa(net),
+             restricted ? "on" : "off");
 
     s = DO_UPCAST(SlirpState, nc, nc);
 
@@ -410,14 +413,14 @@ static int slirp_hostfwd(SlirpState *s, const char *redir_str,
 
     if (slirp_add_hostfwd(s->slirp, is_udp, host_addr, host_port, guest_addr,
                           guest_port) < 0) {
-        qemu_error("could not set up host forwarding rule '%s'\n",
-                   redir_str);
+        error_report("could not set up host forwarding rule '%s'",
+                     redir_str);
         return -1;
     }
     return 0;
 
  fail_syntax:
-    qemu_error("invalid host forwarding rule '%s'\n", redir_str);
+    error_report("invalid host forwarding rule '%s'", redir_str);
     return -1;
 }
 
@@ -464,10 +467,17 @@ int net_slirp_redir(const char *redir_str)
 static void slirp_smb_cleanup(SlirpState *s)
 {
     char cmd[128];
+    int ret;
 
     if (s->smb_dir[0] != '\0') {
         snprintf(cmd, sizeof(cmd), "rm -rf %s", s->smb_dir);
-        system(cmd);
+        ret = system(cmd);
+        if (ret == -1 || !WIFEXITED(ret)) {
+            error_report("'%s' failed.", cmd);
+        } else if (WEXITSTATUS(ret)) {
+            error_report("'%s' failed. Error code: %d",
+                         cmd, WEXITSTATUS(ret));
+        }
         s->smb_dir[0] = '\0';
     }
 }
@@ -483,7 +493,7 @@ static int slirp_smb(SlirpState* s, const char *exported_dir,
     snprintf(s->smb_dir, sizeof(s->smb_dir), "/tmp/qemu-smb.%ld-%d",
              (long)getpid(), instance++);
     if (mkdir(s->smb_dir, 0700) < 0) {
-        qemu_error("could not create samba server dir '%s'\n", s->smb_dir);
+        error_report("could not create samba server dir '%s'", s->smb_dir);
         return -1;
     }
     snprintf(smb_conf, sizeof(smb_conf), "%s/%s", s->smb_dir, "smb.conf");
@@ -491,8 +501,8 @@ static int slirp_smb(SlirpState* s, const char *exported_dir,
     f = fopen(smb_conf, "w");
     if (!f) {
         slirp_smb_cleanup(s);
-        qemu_error("could not create samba server configuration file '%s'\n",
-                   smb_conf);
+        error_report("could not create samba server configuration file '%s'",
+                     smb_conf);
         return -1;
     }
     fprintf(f,
@@ -523,7 +533,7 @@ static int slirp_smb(SlirpState* s, const char *exported_dir,
 
     if (slirp_add_exec(s->slirp, 0, smb_cmdline, &vserver_addr, 139) < 0) {
         slirp_smb_cleanup(s);
-        qemu_error("conflicting/invalid smbserver address\n");
+        error_report("conflicting/invalid smbserver address");
         return -1;
     }
     return 0;
@@ -605,17 +615,17 @@ static int slirp_guestfwd(SlirpState *s, const char *config_str,
     }
 
     fwd = qemu_malloc(sizeof(struct GuestFwd));
-    snprintf(buf, sizeof(buf), "guestfwd.tcp:%d", port);
+    snprintf(buf, sizeof(buf), "guestfwd.tcp.%d", port);
     fwd->hd = qemu_chr_open(buf, p, NULL);
     if (!fwd->hd) {
-        qemu_error("could not open guest forwarding device '%s'\n", buf);
+        error_report("could not open guest forwarding device '%s'", buf);
         qemu_free(fwd);
         return -1;
     }
 
     if (slirp_add_exec(s->slirp, 3, fwd->hd, &server, port) < 0) {
-        qemu_error("conflicting/invalid host:port in guest forwarding "
-                   "rule '%s'\n", config_str);
+        error_report("conflicting/invalid host:port in guest forwarding "
+                     "rule '%s'", config_str);
         qemu_free(fwd);
         return -1;
     }
@@ -628,7 +638,7 @@ static int slirp_guestfwd(SlirpState *s, const char *config_str,
     return 0;
 
  fail_syntax:
-    qemu_error("invalid guest forwarding rule '%s'\n", config_str);
+    error_report("invalid guest forwarding rule '%s'", config_str);
     return -1;
 }
 
@@ -680,6 +690,7 @@ int net_init_slirp(QemuOpts *opts,
     const char *bootfile;
     const char *smb_export;
     const char *vsmbsrv;
+    const char *restrict_opt;
     char *vnet = NULL;
     int restricted = 0;
     int ret;
@@ -692,6 +703,18 @@ int net_init_slirp(QemuOpts *opts,
     bootfile    = qemu_opt_get(opts, "bootfile");
     smb_export  = qemu_opt_get(opts, "smb");
     vsmbsrv     = qemu_opt_get(opts, "smbserver");
+
+    restrict_opt = qemu_opt_get(opts, "restrict");
+    if (restrict_opt) {
+        if (!strcmp(restrict_opt, "on") ||
+            !strcmp(restrict_opt, "yes") || !strcmp(restrict_opt, "y")) {
+            restricted = 1;
+        } else if (strcmp(restrict_opt, "off") &&
+            strcmp(restrict_opt, "no") && strcmp(restrict_opt, "n")) {
+            error_report("invalid option: 'restrict=%s'", restrict_opt);
+            return -1;
+        }
+    }
 
     if (qemu_opt_get(opts, "ip")) {
         const char *ip = qemu_opt_get(opts, "ip");
@@ -711,11 +734,6 @@ int net_init_slirp(QemuOpts *opts,
         vnet = qemu_strdup(qemu_opt_get(opts, "net"));
     }
 
-    if (qemu_opt_get(opts, "restrict") &&
-        qemu_opt_get(opts, "restrict")[0] == 'y') {
-        restricted = 1;
-    }
-
     qemu_opt_foreach(opts, net_init_slirp_configs, NULL, 0);
 
     ret = net_slirp_init(vlan, "user", name, restricted, vnet, vhost,
@@ -726,10 +744,6 @@ int net_init_slirp(QemuOpts *opts,
         config = slirp_configs;
         slirp_configs = config->next;
         qemu_free(config);
-    }
-
-    if (ret != -1 && vlan) {
-        vlan->nb_host_devs++;
     }
 
     qemu_free(vnet);

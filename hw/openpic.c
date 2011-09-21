@@ -141,6 +141,8 @@ enum mpic_ide_bits {
 #error "Please select which OpenPic implementation is to be emulated"
 #endif
 
+#define OPENPIC_PAGE_SIZE 4096
+
 #define BF_WIDTH(_bits_) \
 (((_bits_) + (sizeof(uint32_t) * 8) - 1) / (sizeof(uint32_t) * 8))
 
@@ -240,18 +242,9 @@ typedef struct openpic_t {
     int max_irq;
     int irq_ipi0;
     int irq_tim0;
-    int need_swap;
     void (*reset) (void *);
     void (*irq_raise) (struct openpic_t *, int, IRQ_src_t *);
 } openpic_t;
-
-static inline uint32_t openpic_swap32(openpic_t *opp, uint32_t val)
-{
-    if (opp->need_swap)
-        return bswap32(val);
-
-    return val;
-}
 
 static inline void IRQ_setbit (IRQ_queue_t *q, int n_IRQ)
 {
@@ -597,9 +590,6 @@ static void openpic_gbl_write (void *opaque, target_phys_addr_t addr, uint32_t v
     DPRINTF("%s: addr " TARGET_FMT_plx " <= %08x\n", __func__, addr, val);
     if (addr & 0xF)
         return;
-#if defined TARGET_WORDS_BIGENDIAN
-    val = openpic_swap32(opp, val);
-#endif
     addr &= 0xFF;
     switch (addr) {
     case 0x00: /* FREP */
@@ -693,9 +683,6 @@ static uint32_t openpic_gbl_read (void *opaque, target_phys_addr_t addr)
         break;
     }
     DPRINTF("%s: => %08x\n", __func__, retval);
-#if defined TARGET_WORDS_BIGENDIAN
-    retval = openpic_swap32(opp, retval);
-#endif
 
     return retval;
 }
@@ -708,9 +695,6 @@ static void openpic_timer_write (void *opaque, uint32_t addr, uint32_t val)
     DPRINTF("%s: addr %08x <= %08x\n", __func__, addr, val);
     if (addr & 0xF)
         return;
-#if defined TARGET_WORDS_BIGENDIAN
-    val = openpic_swap32(opp, val);
-#endif
     addr -= 0x1100;
     addr &= 0xFFFF;
     idx = (addr & 0xFFF0) >> 6;
@@ -763,9 +747,6 @@ static uint32_t openpic_timer_read (void *opaque, uint32_t addr)
         break;
     }
     DPRINTF("%s: => %08x\n", __func__, retval);
-#if defined TARGET_WORDS_BIGENDIAN
-    retval = openpic_swap32(opp, retval);
-#endif
 
     return retval;
 }
@@ -778,9 +759,6 @@ static void openpic_src_write (void *opaque, uint32_t addr, uint32_t val)
     DPRINTF("%s: addr %08x <= %08x\n", __func__, addr, val);
     if (addr & 0xF)
         return;
-#if defined TARGET_WORDS_BIGENDIAN
-    val = openpic_swap32(opp, val);
-#endif
     addr = addr & 0xFFF0;
     idx = addr >> 5;
     if (addr & 0x10) {
@@ -812,9 +790,6 @@ static uint32_t openpic_src_read (void *opaque, uint32_t addr)
         retval = read_IRQreg(opp, idx, IRQ_IPVP);
     }
     DPRINTF("%s: => %08x\n", __func__, retval);
-#if defined TARGET_WORDS_BIGENDIAN
-    retval = openpic_swap32(opp, retval);
-#endif
 
     return retval;
 }
@@ -829,9 +804,6 @@ static void openpic_cpu_write (void *opaque, target_phys_addr_t addr, uint32_t v
     DPRINTF("%s: addr " TARGET_FMT_plx " <= %08x\n", __func__, addr, val);
     if (addr & 0xF)
         return;
-#if defined TARGET_WORDS_BIGENDIAN
-    val = openpic_swap32(opp, val);
-#endif
     addr &= 0x1FFF0;
     idx = addr / 0x1000;
     dst = &opp->dst[idx];
@@ -949,9 +921,6 @@ static uint32_t openpic_cpu_read (void *opaque, target_phys_addr_t addr)
         break;
     }
     DPRINTF("%s: => %08x\n", __func__, retval);
-#if defined TARGET_WORDS_BIGENDIAN
-    retval = openpic_swap32(opp, retval);
-#endif
 
     return retval;
 }
@@ -1049,7 +1018,8 @@ static void openpic_map(PCIDevice *pci_dev, int region_num,
     cpu_register_physical_memory(addr, 0x40000, opp->mem_index);
 #if 0 // Don't implement ISU for now
     opp_io_memory = cpu_register_io_memory(openpic_src_read,
-                                           openpic_src_write);
+                                           openpic_src_write, NULL
+                                           DEVICE_NATIVE_ENDIAN);
     cpu_register_physical_memory(isu_base, 0x20 * (EXT_IRQ + 2),
                                  opp_io_memory);
 #endif
@@ -1208,17 +1178,16 @@ qemu_irq *openpic_init (PCIBus *bus, int *pmem_index, int nb_cpus,
         pci_config_set_vendor_id(pci_conf, PCI_VENDOR_ID_IBM);
         pci_config_set_device_id(pci_conf, PCI_DEVICE_ID_IBM_OPENPIC2);
         pci_config_set_class(pci_conf, PCI_CLASS_SYSTEM_OTHER); // FIXME?
-        pci_conf[PCI_HEADER_TYPE] = PCI_HEADER_TYPE_NORMAL; // header_type
         pci_conf[0x3d] = 0x00; // no interrupt pin
 
         /* Register I/O spaces */
-        pci_register_bar((PCIDevice *)opp, 0, 0x40000,
+        pci_register_bar(&opp->pci_dev, 0, 0x40000,
                                PCI_BASE_ADDRESS_SPACE_MEMORY, &openpic_map);
     } else {
         opp = qemu_mallocz(sizeof(openpic_t));
     }
-    opp->mem_index = cpu_register_io_memory(openpic_read,
-                                            openpic_write, opp);
+    opp->mem_index = cpu_register_io_memory(openpic_read, openpic_write, opp,
+                                            DEVICE_LITTLE_ENDIAN);
 
     //    isu_base &= 0xFFFC0000;
     opp->nb_cpus = nb_cpus;
@@ -1246,9 +1215,9 @@ qemu_irq *openpic_init (PCIBus *bus, int *pmem_index, int nb_cpus,
     for (i = 0; i < nb_cpus; i++)
         opp->dst[i].irqs = irqs[i];
     opp->irq_out = irq_out;
-    opp->need_swap = 1;
 
-    register_savevm("openpic", 0, 2, openpic_save, openpic_load, opp);
+    register_savevm(&opp->pci_dev.qdev, "openpic", 0, 2,
+                    openpic_save, openpic_load, opp);
     qemu_register_reset(openpic_reset, opp);
 
     opp->irq_raise = openpic_irq_raise;
@@ -1384,7 +1353,7 @@ static void mpic_src_ext_write (void *opaque, target_phys_addr_t addr,
     if (addr & 0xF)
         return;
 
-    addr -= MPIC_EXT_REG_START & (TARGET_PAGE_SIZE - 1);
+    addr -= MPIC_EXT_REG_START & (OPENPIC_PAGE_SIZE - 1);
     if (addr < MPIC_EXT_REG_SIZE) {
         idx += (addr & 0xFFF0) >> 5;
         if (addr & 0x10) {
@@ -1408,7 +1377,7 @@ static uint32_t mpic_src_ext_read (void *opaque, target_phys_addr_t addr)
     if (addr & 0xF)
         return retval;
 
-    addr -= MPIC_EXT_REG_START & (TARGET_PAGE_SIZE - 1);
+    addr -= MPIC_EXT_REG_START & (OPENPIC_PAGE_SIZE - 1);
     if (addr < MPIC_EXT_REG_SIZE) {
         idx += (addr & 0xFFF0) >> 5;
         if (addr & 0x10) {
@@ -1434,7 +1403,7 @@ static void mpic_src_int_write (void *opaque, target_phys_addr_t addr,
     if (addr & 0xF)
         return;
 
-    addr -= MPIC_INT_REG_START & (TARGET_PAGE_SIZE - 1);
+    addr -= MPIC_INT_REG_START & (OPENPIC_PAGE_SIZE - 1);
     if (addr < MPIC_INT_REG_SIZE) {
         idx += (addr & 0xFFF0) >> 5;
         if (addr & 0x10) {
@@ -1458,7 +1427,7 @@ static uint32_t mpic_src_int_read (void *opaque, target_phys_addr_t addr)
     if (addr & 0xF)
         return retval;
 
-    addr -= MPIC_INT_REG_START & (TARGET_PAGE_SIZE - 1);
+    addr -= MPIC_INT_REG_START & (OPENPIC_PAGE_SIZE - 1);
     if (addr < MPIC_INT_REG_SIZE) {
         idx += (addr & 0xFFF0) >> 5;
         if (addr & 0x10) {
@@ -1484,7 +1453,7 @@ static void mpic_src_msg_write (void *opaque, target_phys_addr_t addr,
     if (addr & 0xF)
         return;
 
-    addr -= MPIC_MSG_REG_START & (TARGET_PAGE_SIZE - 1);
+    addr -= MPIC_MSG_REG_START & (OPENPIC_PAGE_SIZE - 1);
     if (addr < MPIC_MSG_REG_SIZE) {
         idx += (addr & 0xFFF0) >> 5;
         if (addr & 0x10) {
@@ -1508,7 +1477,7 @@ static uint32_t mpic_src_msg_read (void *opaque, target_phys_addr_t addr)
     if (addr & 0xF)
         return retval;
 
-    addr -= MPIC_MSG_REG_START & (TARGET_PAGE_SIZE - 1);
+    addr -= MPIC_MSG_REG_START & (OPENPIC_PAGE_SIZE - 1);
     if (addr < MPIC_MSG_REG_SIZE) {
         idx += (addr & 0xFFF0) >> 5;
         if (addr & 0x10) {
@@ -1534,7 +1503,7 @@ static void mpic_src_msi_write (void *opaque, target_phys_addr_t addr,
     if (addr & 0xF)
         return;
 
-    addr -= MPIC_MSI_REG_START & (TARGET_PAGE_SIZE - 1);
+    addr -= MPIC_MSI_REG_START & (OPENPIC_PAGE_SIZE - 1);
     if (addr < MPIC_MSI_REG_SIZE) {
         idx += (addr & 0xFFF0) >> 5;
         if (addr & 0x10) {
@@ -1557,7 +1526,7 @@ static uint32_t mpic_src_msi_read (void *opaque, target_phys_addr_t addr)
     if (addr & 0xF)
         return retval;
 
-    addr -= MPIC_MSI_REG_START & (TARGET_PAGE_SIZE - 1);
+    addr -= MPIC_MSI_REG_START & (OPENPIC_PAGE_SIZE - 1);
     if (addr < MPIC_MSI_REG_SIZE) {
         idx += (addr & 0xFFF0) >> 5;
         if (addr & 0x10) {
@@ -1685,7 +1654,8 @@ qemu_irq *mpic_init (target_phys_addr_t base, int nb_cpus,
     for (i = 0; i < sizeof(list)/sizeof(list[0]); i++) {
         int mem_index;
 
-        mem_index = cpu_register_io_memory(list[i].read, list[i].write, mpp);
+        mem_index = cpu_register_io_memory(list[i].read, list[i].write, mpp,
+                                           DEVICE_BIG_ENDIAN);
         if (mem_index < 0) {
             goto free;
         }
@@ -1701,12 +1671,11 @@ qemu_irq *mpic_init (target_phys_addr_t base, int nb_cpus,
     for (i = 0; i < nb_cpus; i++)
         mpp->dst[i].irqs = irqs[i];
     mpp->irq_out = irq_out;
-    mpp->need_swap = 0;    /* MPIC has the same endian as target */
 
     mpp->irq_raise = mpic_irq_raise;
     mpp->reset = mpic_reset;
 
-    register_savevm("mpic", 0, 2, openpic_save, openpic_load, mpp);
+    register_savevm(NULL, "mpic", 0, 2, openpic_save, openpic_load, mpp);
     qemu_register_reset(mpic_reset, mpp);
 
     return qemu_allocate_irqs(openpic_set_irq, mpp, mpp->max_irq);

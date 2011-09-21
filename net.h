@@ -1,7 +1,6 @@
 #ifndef QEMU_NET_H
 #define QEMU_NET_H
 
-#include <stdbool.h>
 #include "qemu-queue.h"
 #include "qemu-common.h"
 #include "qdict.h"
@@ -18,23 +17,27 @@ typedef struct NICConf {
     MACAddr macaddr;
     VLANState *vlan;
     VLANClientState *peer;
+    int32_t bootindex;
 } NICConf;
 
 #define DEFINE_NIC_PROPERTIES(_state, _conf)                            \
     DEFINE_PROP_MACADDR("mac",   _state, _conf.macaddr),                \
     DEFINE_PROP_VLAN("vlan",     _state, _conf.vlan),                   \
-    DEFINE_PROP_NETDEV("netdev", _state, _conf.peer)
+    DEFINE_PROP_NETDEV("netdev", _state, _conf.peer),                   \
+    DEFINE_PROP_INT32("bootindex", _state, _conf.bootindex, -1)
 
 /* VLANs support */
 
 typedef enum {
     NET_CLIENT_TYPE_NONE,
     NET_CLIENT_TYPE_NIC,
-    NET_CLIENT_TYPE_SLIRP,
+    NET_CLIENT_TYPE_USER,
     NET_CLIENT_TYPE_TAP,
     NET_CLIENT_TYPE_SOCKET,
     NET_CLIENT_TYPE_VDE,
-    NET_CLIENT_TYPE_DUMP
+    NET_CLIENT_TYPE_DUMP,
+
+    NET_CLIENT_TYPE_MAX
 } net_client_type;
 
 typedef void (NetPoll)(VLANClientState *, bool enable);
@@ -73,13 +76,13 @@ typedef struct NICState {
     VLANClientState nc;
     NICConf *conf;
     void *opaque;
+    bool peer_deleted;
 } NICState;
 
 struct VLANState {
     int id;
     QTAILQ_HEAD(, VLANClientState) clients;
     QTAILQ_ENTRY(VLANState) next;
-    unsigned int nb_guest_devs, nb_host_devs;
     NetQueue *send_queue;
 };
 
@@ -119,24 +122,21 @@ int qemu_find_nic_model(NICInfo *nd, const char * const *models,
                         const char *default_model);
 
 void do_info_network(Monitor *mon);
-void do_set_link(Monitor *mon, const QDict *qdict);
+int do_set_link(Monitor *mon, const QDict *qdict, QObject **ret_data);
 
 /* NIC info */
 
 #define MAX_NICS 8
-enum {
-	NIC_NVECTORS_UNSPECIFIED = -1
-};
 
 struct NICInfo {
-    uint8_t macaddr[6];
+    MACAddr macaddr;
     char *model;
     char *name;
     char *devaddr;
     VLANState *vlan;
     VLANClientState *netdev;
-    int used;
-    int bootable;
+    int used;         /* is this slot in nd_table[] being used? */
+    int instantiated; /* does this NICInfo correspond to an instantiated NIC? */
     int nvectors;
 };
 
@@ -163,13 +163,14 @@ extern const char *legacy_tftp_prefix;
 extern const char *legacy_bootp_filename;
 
 int net_client_init(Monitor *mon, QemuOpts *opts, int is_netdev);
-void net_client_uninit(NICInfo *nd);
 int net_client_parse(QemuOptsList *opts_list, const char *str);
 int net_init_clients(void);
+void net_check_clients(void);
 void net_cleanup(void);
-void net_set_boot_mask(int boot_mask);
 void net_host_device_add(Monitor *mon, const QDict *qdict);
 void net_host_device_remove(Monitor *mon, const QDict *qdict);
+int do_netdev_add(Monitor *mon, const QDict *qdict, QObject **ret_data);
+int do_netdev_del(Monitor *mon, const QDict *qdict, QObject **ret_data);
 
 #define DEFAULT_NETWORK_SCRIPT "/etc/qemu-ifup"
 #define DEFAULT_NETWORK_DOWN_SCRIPT "/etc/qemu-ifdown"

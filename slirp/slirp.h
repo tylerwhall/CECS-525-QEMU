@@ -7,10 +7,6 @@
 #ifdef _WIN32
 # include <inttypes.h>
 
-typedef uint8_t u_int8_t;
-typedef uint16_t u_int16_t;
-typedef uint32_t u_int32_t;
-typedef uint64_t u_int64_t;
 typedef char *caddr_t;
 
 # include <windows.h>
@@ -28,7 +24,9 @@ typedef char *caddr_t;
 #else
 # define ioctlsocket ioctl
 # define closesocket(s) close(s)
-# define O_BINARY 0
+# if !defined(__HAIKU__)
+#  define O_BINARY 0
+# endif
 #endif
 
 #include <sys/types.h>
@@ -37,35 +35,6 @@ typedef char *caddr_t;
 #endif
 
 #include <sys/time.h>
-
-#ifdef NEED_TYPEDEFS
-typedef char int8_t;
-typedef unsigned char u_int8_t;
-
-# if SIZEOF_SHORT == 2
-    typedef short int16_t;
-    typedef unsigned short u_int16_t;
-# else
-#  if SIZEOF_INT == 2
-    typedef int int16_t;
-    typedef unsigned int u_int16_t;
-#  else
-    #error Cannot find a type with sizeof() == 2
-#  endif
-# endif
-
-# if SIZEOF_SHORT == 4
-   typedef short int32_t;
-   typedef unsigned short u_int32_t;
-# else
-#  if SIZEOF_INT == 4
-    typedef int int32_t;
-    typedef unsigned int u_int32_t;
-#  else
-    #error Cannot find a type with sizeof() == 4
-#  endif
-# endif
-#endif /* NEED_TYPEDEFS */
 
 #ifdef HAVE_UNISTD_H
 # include <unistd.h>
@@ -183,6 +152,7 @@ int inet_aton(const char *cp, struct in_addr *ia);
 #include "tcp_var.h"
 #include "tcpip.h"
 #include "udp.h"
+#include "ip_icmp.h"
 #include "mbuf.h"
 #include "sbuf.h"
 #include "socket.h"
@@ -233,7 +203,7 @@ struct Slirp {
 
     /* ip states */
     struct ipq ipq;         /* ip reass. queue */
-    u_int16_t ip_id;        /* ip packet ctr, for ids */
+    uint16_t ip_id;         /* ip packet ctr, for ids */
 
     /* bootp/dhcp states */
     BOOTPClient bootp_clients[NB_BOOTP_CLIENTS];
@@ -243,11 +213,15 @@ struct Slirp {
     struct socket tcb;
     struct socket *tcp_last_so;
     tcp_seq tcp_iss;        /* tcp initial send seq # */
-    u_int32_t tcp_now;      /* for RFC 1323 timestamps */
+    uint32_t tcp_now;       /* for RFC 1323 timestamps */
 
     /* udp states */
     struct socket udb;
     struct socket *udp_last_so;
+
+    /* icmp states */
+    struct socket icmp;
+    struct socket *icmp_last_so;
 
     /* tftp states */
     char *tftp_prefix;
@@ -268,22 +242,8 @@ void if_start(Slirp *);
 void if_start(struct ttys *);
 #endif
 
-#ifdef BAD_SPRINTF
-# define vsprintf vsprintf_len
-# define sprintf sprintf_len
- extern int vsprintf_len(char *, const char *, va_list);
- extern int sprintf_len(char *, const char *, ...);
-#endif
-
-#ifdef DECLARE_SPRINTF
-# ifndef BAD_SPRINTF
- extern int vsprintf(char *, const char *, va_list);
-# endif
- extern int vfprintf(FILE *, const char *, va_list);
-#endif
-
 #ifndef HAVE_STRERROR
- extern char *strerror(int error);
+ char *strerror(int error);
 #endif
 
 #ifndef HAVE_INDEX
@@ -294,7 +254,7 @@ void if_start(struct ttys *);
  long gethostid(void);
 #endif
 
-void lprint(const char *, ...);
+void lprint(const char *, ...) GCC_FMT_ATTR(1, 2);
 
 #ifndef _WIN32
 #include <netdb.h>
@@ -339,7 +299,7 @@ void tcp_sockclosed(struct tcpcb *);
 int tcp_fconnect(struct socket *);
 void tcp_connect(struct socket *);
 int tcp_attach(struct socket *);
-u_int8_t tcp_tos(struct socket *);
+uint8_t tcp_tos(struct socket *);
 int tcp_emu(struct socket *, struct mbuf *);
 int tcp_ctl(struct socket *);
 struct tcpcb *tcp_drop(struct tcpcb *tp, int err);

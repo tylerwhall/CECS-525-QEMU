@@ -161,7 +161,7 @@ static int oss_write (SWVoiceOut *sw, void *buf, int len)
     return audio_pcm_sw_write (sw, buf, len);
 }
 
-static int aud_to_ossfmt (audfmt_e fmt)
+static int aud_to_ossfmt (audfmt_e fmt, int endianness)
 {
     switch (fmt) {
     case AUD_FMT_S8:
@@ -171,10 +171,20 @@ static int aud_to_ossfmt (audfmt_e fmt)
         return AFMT_U8;
 
     case AUD_FMT_S16:
-        return AFMT_S16_LE;
+        if (endianness) {
+            return AFMT_S16_BE;
+        }
+        else {
+            return AFMT_S16_LE;
+        }
 
     case AUD_FMT_U16:
-        return AFMT_U16_LE;
+        if (endianness) {
+            return AFMT_U16_BE;
+        }
+        else {
+            return AFMT_U16_LE;
+        }
 
     default:
         dolog ("Internal logic error: Bad audio format %d\n", fmt);
@@ -240,16 +250,39 @@ static void oss_dump_info (struct oss_params *req, struct oss_params *obt)
 }
 #endif
 
+#ifdef USE_DSP_POLICY
+static int oss_get_version (int fd, int *version, const char *typ)
+{
+    if (ioctl (fd, OSS_GETVERSION, &version)) {
+#if defined(__FreeBSD__) || defined(__FreeBSD_kernel__)
+        /*
+         * Looks like atm (20100109) FreeBSD knows OSS_GETVERSION
+         * since 7.x, but currently only on the mixer device (or in
+         * the Linuxolator), and in the native version that part of
+         * the code is in fact never reached so the ioctl fails anyway.
+         * Until this is fixed, just check the errno and if its what
+         * FreeBSD's sound drivers return atm assume they are new enough.
+         */
+        if (errno == EINVAL) {
+            *version = 0x040000;
+            return 0;
+        }
+#endif
+        oss_logerr2 (errno, typ, "Failed to get OSS version\n");
+        return -1;
+    }
+    return 0;
+}
+#endif
+
 static int oss_open (int in, struct oss_params *req,
                      struct oss_params *obt, int *pfd)
 {
     int fd;
-#ifdef USE_DSP_POLICY
-    int version;
-#endif
     int oflags = conf.exclusive ? O_EXCL : 0;
     audio_buf_info abinfo;
     int fmt, freq, nchannels;
+    int setfragment = 1;
     const char *dspname = in ? conf.devpath_in : conf.devpath_out;
     const char *typ = in ? "ADC" : "DAC";
 
@@ -288,27 +321,29 @@ static int oss_open (int in, struct oss_params *req,
     }
 
 #ifdef USE_DSP_POLICY
-    if (ioctl (fd, OSS_GETVERSION, &version)) {
-        oss_logerr2 (errno, typ, "Failed to get OSS version\n");
-        version = 0;
-    }
+    if (conf.policy >= 0) {
+        int version;
 
-    if (conf.debug) {
-        dolog ("OSS version = %#x\n", version);
-    }
+        if (!oss_get_version (fd, &version, typ)) {
+            if (conf.debug) {
+                dolog ("OSS version = %#x\n", version);
+            }
 
-    if (conf.policy >= 0 && version >= 0x040000)
-    {
-        int policy = conf.policy;
-        if (ioctl (fd, SNDCTL_DSP_POLICY, &policy)) {
-            oss_logerr2 (errno, typ, "Failed to set timing policy to %d\n",
-                         conf.policy);
-            goto err;
+            if (version >= 0x040000) {
+                int policy = conf.policy;
+                if (ioctl (fd, SNDCTL_DSP_POLICY, &policy)) {
+                    oss_logerr2 (errno, typ,
+                                 "Failed to set timing policy to %d\n",
+                                 conf.policy);
+                    goto err;
+                }
+                setfragment = 0;
+            }
         }
     }
-    else
 #endif
-    {
+
+    if (setfragment) {
         int mmmmssss = (req->nfrags << 16) | ctz32 (req->fragsize);
         if (ioctl (fd, SNDCTL_DSP_SETFRAGMENT, &mmmmssss)) {
             oss_logerr2 (errno, typ, "Failed to set buffer length (%d, %d)\n",
@@ -491,7 +526,7 @@ static int oss_init_out (HWVoiceOut *hw, struct audsettings *as)
 
     oss->fd = -1;
 
-    req.fmt = aud_to_ossfmt (as->fmt);
+    req.fmt = aud_to_ossfmt (as->fmt, as->endianness);
     req.freq = as->freq;
     req.nchannels = as->nchannels;
     req.fragsize = conf.fragsize;
@@ -657,7 +692,7 @@ static int oss_init_in (HWVoiceIn *hw, struct audsettings *as)
 
     oss->fd = -1;
 
-    req.fmt = aud_to_ossfmt (as->fmt);
+    req.fmt = aud_to_ossfmt (as->fmt, as->endianness);
     req.freq = as->freq;
     req.nchannels = as->nchannels;
     req.fragsize = conf.fragsize;
@@ -753,8 +788,7 @@ static int oss_run_in (HWVoiceIn *hw)
                            hw->info.align + 1);
                 }
                 read_samples += nread >> hwshift;
-                hw->conv (hw->conv_buf + bufs[i].add, p, nread >> hwshift,
-                          &nominal_volume);
+                hw->conv (hw->conv_buf + bufs[i].add, p, nread >> hwshift);
             }
 
             if (bufs[i].len - nread) {
