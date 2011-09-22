@@ -1726,10 +1726,10 @@ static void gen_set_sr(DisasContext *s, uint16_t insn, int ccr_only)
     TCGv reg;
 
     s->cc_op = CC_OP_FLAGS;
-    if ((insn & 0x38) == 0)
+    if ((insn & 0x3f) != 0x3c)
       {
         tmp = tcg_temp_new();
-        reg = DREG(insn, 0);
+        SRC_EA(reg, OS_WORD, 1, NULL);
         tcg_gen_andi_i32(QREG_CC_DEST, reg, 0xf);
         tcg_gen_shri_i32(tmp, reg, 4);
         tcg_gen_andi_i32(QREG_CC_X, tmp, 1);
@@ -1737,14 +1737,12 @@ static void gen_set_sr(DisasContext *s, uint16_t insn, int ccr_only)
             gen_helper_set_sr(cpu_env, reg);
         }
       }
-    else if ((insn & 0x3f) == 0x3c)
+    else
       {
         uint16_t val;
         val = read_im16(s);
         gen_set_sr_im(s, val, ccr_only);
       }
-    else
-        disas_undef(s, insn);
 }
 
 DISAS_INSN(move_to_ccr)
