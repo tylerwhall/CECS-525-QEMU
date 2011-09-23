@@ -2614,10 +2614,11 @@ typedef struct subpage_t {
     target_phys_addr_t base;
     ram_addr_t sub_io_index[TARGET_PAGE_SIZE];
     ram_addr_t region_offset[TARGET_PAGE_SIZE];
+    ram_addr_t page_offset[TARGET_PAGE_SIZE];
 } subpage_t;
 
 static int subpage_register (subpage_t *mmio, uint32_t start, uint32_t end,
-                             ram_addr_t memory, ram_addr_t region_offset);
+                             ram_addr_t memory, ram_addr_t region_offset, int32_t page_offset);
 static subpage_t *subpage_init (target_phys_addr_t base, ram_addr_t *phys,
                                 ram_addr_t orig_memory,
                                 ram_addr_t region_offset);
@@ -2660,6 +2661,7 @@ void cpu_register_physical_memory_log(target_phys_addr_t start_addr,
     CPUState *env;
     ram_addr_t orig_size = size;
     subpage_t *subpage;
+    ram_addr_t page_offset = start_addr & ~TARGET_PAGE_MASK;
 
     assert(size);
     cpu_notify_set_memory(start_addr, size, phys_offset, log_dirty);
@@ -2691,10 +2693,12 @@ void cpu_register_physical_memory_log(target_phys_addr_t start_addr,
                                             >> IO_MEM_SHIFT];
                 }
                 subpage_register(subpage, start_addr2, end_addr2, phys_offset,
-                                 region_offset);
+                                 region_offset, page_offset);
                 p->region_offset = 0;
             } else {
-                p->phys_offset = phys_offset;
+                p->phys_offset = phys_offset; // Overwrite this mapping
+                p->region_offset = region_offset - page_offset;
+                assert(region_offset > page_offset);
                 if ((phys_offset & ~TARGET_PAGE_MASK) <= IO_MEM_ROM ||
                     (phys_offset & IO_MEM_ROMD))
                     phys_offset += TARGET_PAGE_SIZE;
@@ -2702,7 +2706,7 @@ void cpu_register_physical_memory_log(target_phys_addr_t start_addr,
         } else {
             p = phys_page_find_alloc(addr >> TARGET_PAGE_BITS, 1);
             p->phys_offset = phys_offset;
-            p->region_offset = region_offset;
+            p->region_offset = region_offset - page_offset;
             if ((phys_offset & ~TARGET_PAGE_MASK) <= IO_MEM_ROM ||
                 (phys_offset & IO_MEM_ROMD)) {
                 phys_offset += TARGET_PAGE_SIZE;
@@ -2718,8 +2722,10 @@ void cpu_register_physical_memory_log(target_phys_addr_t start_addr,
                                            &p->phys_offset, IO_MEM_UNASSIGNED,
                                            addr & TARGET_PAGE_MASK);
                     subpage_register(subpage, start_addr2, end_addr2,
-                                     phys_offset, region_offset);
+                                     phys_offset, region_offset, page_offset);
                     p->region_offset = 0;
+                } else {
+                    assert(region_offset > page_offset);
                 }
             }
         }
@@ -3489,6 +3495,7 @@ static inline uint32_t subpage_readlen (subpage_t *mmio,
 #endif
 
     addr += mmio->region_offset[idx];
+    addr -= mmio->page_offset[idx];
     idx = mmio->sub_io_index[idx];
     return io_mem_read[idx][len](io_mem_opaque[idx], addr);
 }
@@ -3503,6 +3510,7 @@ static inline void subpage_writelen (subpage_t *mmio, target_phys_addr_t addr,
 #endif
 
     addr += mmio->region_offset[idx];
+    addr -= mmio->page_offset[idx];
     idx = mmio->sub_io_index[idx];
     io_mem_write[idx][len](io_mem_opaque[idx], addr, value);
 }
@@ -3553,7 +3561,7 @@ static CPUWriteMemoryFunc * const subpage_write[] = {
 };
 
 static int subpage_register (subpage_t *mmio, uint32_t start, uint32_t end,
-                             ram_addr_t memory, ram_addr_t region_offset)
+                             ram_addr_t memory, ram_addr_t region_offset, int32_t page_offset)
 {
     int idx, eidx;
 
@@ -3571,6 +3579,7 @@ static int subpage_register (subpage_t *mmio, uint32_t start, uint32_t end,
     for (; idx <= eidx; idx++) {
         mmio->sub_io_index[idx] = memory;
         mmio->region_offset[idx] = region_offset;
+        mmio->page_offset[idx] = page_offset;
     }
 
     return 0;
@@ -3593,7 +3602,7 @@ static subpage_t *subpage_init (target_phys_addr_t base, ram_addr_t *phys,
            mmio, base, TARGET_PAGE_SIZE, subpage_memory);
 #endif
     *phys = subpage_memory | IO_MEM_SUBPAGE;
-    subpage_register(mmio, 0, TARGET_PAGE_SIZE-1, orig_memory, region_offset);
+    subpage_register(mmio, 0, TARGET_PAGE_SIZE-1, orig_memory, region_offset, 0);
 
     return mmio;
 }
